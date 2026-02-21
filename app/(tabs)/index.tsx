@@ -1,31 +1,47 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Image } from "expo-image";
 import { Link } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
-  FlatList,
+  Dimensions,
   StyleSheet,
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
-import { HelloWave } from "@/components/hello-wave";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { Button } from "@/components/ui/Button";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { Outfit, outfitService } from "@/services/outfitService";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const theme = Colors[colorScheme as keyof typeof Colors];
 
   const [outfits, setOutfits] = useState<Outfit[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [isProcessing, setIsProcessing] = useState(false);
+
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
 
   useEffect(() => {
     loadOutfits();
@@ -36,178 +52,289 @@ export default function HomeScreen() {
       setIsLoading(true);
       const data = await outfitService.getPublicOutfits();
       setOutfits(data);
+      setCurrentIndex(0);
     } catch (error: any) {
-      // Intentionally silent or logged for production, but Alert helps the user debug their connection
       console.log("Supabase Fetch Error:", error.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleStartProcessing = async () => {
-    setIsProcessing(true);
-    // Demonstrate "Heavy Backend Processing"
-    await outfitService.processOutfitImage("sample_uri");
-    setIsProcessing(false);
-    Alert.alert("Processing Complete", "Your AI style analysis is ready!");
+  const onSwipeComplete = useCallback(
+    (direction: "left" | "right") => {
+      const outfit = outfits[currentIndex];
+      if (direction === "right") {
+        outfitService.toggleLikeOutfit(outfit);
+      }
+
+      // Move to next card
+      setCurrentIndex((prev) => prev + 1);
+      translateX.value = 0;
+      translateY.value = 0;
+    },
+    [outfits, currentIndex],
+  );
+
+  const gesture = Gesture.Pan()
+    .onUpdate((event) => {
+      translateX.value = event.translationX;
+      translateY.value = event.translationY;
+    })
+    .onEnd((event) => {
+      if (Math.abs(event.translationX) > SWIPE_THRESHOLD) {
+        const direction = event.translationX > 0 ? "right" : "left";
+        translateX.value = withSpring(
+          event.translationX > 0 ? SCREEN_WIDTH : -SCREEN_WIDTH,
+          {
+            velocity: event.velocityX,
+          },
+        );
+        runOnJS(onSwipeComplete)(direction);
+      } else {
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+      }
+    });
+
+  const cardStyle = useAnimatedStyle(() => {
+    const rotate = interpolate(
+      translateX.value,
+      [-SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2],
+      [-10, 0, 10],
+      Extrapolation.CLAMP,
+    );
+
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { rotate: `${rotate}deg` },
+      ],
+    };
+  });
+
+  const likeOpacity = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translateX.value,
+      [0, SWIPE_THRESHOLD],
+      [0, 1],
+      Extrapolation.CLAMP,
+    ),
+  }));
+
+  const nopeOpacity = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translateX.value,
+      [-SWIPE_THRESHOLD, 0],
+      [1, 0],
+      Extrapolation.CLAMP,
+    ),
+  }));
+
+  const renderCard = () => {
+    if (currentIndex >= outfits.length) {
+      return (
+        <View style={styles.emptyContainer}>
+          <IconSymbol name="sparkles" size={64} color={theme.tint} />
+          <ThemedText style={styles.emptyText}>
+            You've seen everything!
+          </ThemedText>
+          <TouchableOpacity
+            style={[styles.refreshButton, { backgroundColor: theme.tint }]}
+            onPress={loadOutfits}
+          >
+            <ThemedText style={{ color: "white", fontWeight: "bold" }}>
+              Refresh Feed
+            </ThemedText>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    const currentOutfit = outfits[currentIndex];
+
+    return (
+      <GestureDetector gesture={gesture}>
+        <Animated.View style={[styles.cardContainer, cardStyle]}>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.secondary, borderColor: theme.border },
+            ]}
+          >
+            <Image
+              source={{ uri: currentOutfit.image_url || "" }}
+              style={styles.cardImage}
+              contentFit="cover"
+            />
+
+            <View style={styles.overlay} />
+
+            <Animated.View style={[styles.likeBadge, likeOpacity]}>
+              <ThemedText style={styles.badgeText}>YAY</ThemedText>
+            </Animated.View>
+
+            <Animated.View style={[styles.nopeBadge, nopeOpacity]}>
+              <ThemedText style={[styles.badgeText, { color: "#FF4136" }]}>
+                NAY
+              </ThemedText>
+            </Animated.View>
+
+            <View style={styles.cardFooter}>
+              <ThemedText style={styles.cardTitle}>
+                {currentOutfit.title}
+              </ThemedText>
+              <ThemedText style={styles.cardDesc}>
+                {currentOutfit.description}
+              </ThemedText>
+              <View style={styles.tagContainer}>
+                <View
+                  style={[styles.tag, { backgroundColor: theme.tint + "40" }]}
+                >
+                  <ThemedText style={[styles.tagText, { color: "white" }]}>
+                    Draped on Avatar
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+      </GestureDetector>
+    );
   };
 
   return (
-    <ThemedView
-      style={[styles.container, { backgroundColor: theme.background }]}
-    >
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <ThemedText style={styles.title}>Vlyzo</ThemedText>
-          <HelloWave />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemedView
+        style={[styles.container, { backgroundColor: theme.background }]}
+      >
+        <View style={styles.header}>
+          <Link href="/settings" asChild>
+            <TouchableOpacity style={styles.settingsButton}>
+              <IconSymbol name="gearshape.fill" size={24} color={theme.text} />
+            </TouchableOpacity>
+          </Link>
         </View>
-        <Link href="/settings" asChild>
-          <TouchableOpacity style={styles.settingsButton}>
-            <IconSymbol name="gearshape.fill" size={24} color={theme.text} />
-          </TouchableOpacity>
-        </Link>
-      </View>
 
-      <FlatList
-        data={outfits}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.scrollContent}
-        ListHeaderComponent={
-          <>
-            <ThemedView style={styles.processingSection}>
-              <ThemedText style={styles.subtitle}>
-                Backend Processing
-              </ThemedText>
-              <ThemedText style={styles.description}>
-                Trigger an AI style check using Supabase Edge Functions.
-              </ThemedText>
-              <Button
-                title={isProcessing ? "Analyzing..." : "Start AI Process"}
-                onPress={handleStartProcessing}
-                loading={isProcessing}
-                variant="secondary"
-              />
-            </ThemedView>
-
-            <ThemedText style={styles.sectionTitle}>Trending Now</ThemedText>
-          </>
-        }
-        renderItem={({ item }) => (
-          <View style={[styles.card, { borderColor: theme.border }]}>
-            <View
-              style={[
-                styles.imagePlaceholder,
-                { backgroundColor: theme.secondary },
-              ]}
-            >
-              {item.image_url ? (
-                <Image
-                  source={{ uri: item.image_url }}
-                  style={styles.cardImage}
-                />
-              ) : (
-                <ThemedText style={styles.placeholderText}>No Image</ThemedText>
-              )}
-            </View>
-            <ThemedText style={styles.cardTitle}>{item.title}</ThemedText>
-          </View>
-        )}
-        ListEmptyComponent={
-          isLoading ? (
+        <View style={styles.deckContainer}>
+          {isLoading ? (
             <ActivityIndicator size="large" color={theme.tint} />
           ) : (
-            <ThemedText style={styles.emptyText}>
-              No outfits found in the backend.
-            </ThemedText>
-          )
-        }
-        refreshing={isLoading}
-        onRefresh={loadOutfits}
-      />
-    </ThemedView>
+            renderCard()
+          )}
+        </View>
+      </ThemedView>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 60,
   },
   header: {
-    flexDirection: "row",
-    paddingHorizontal: 24,
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 24,
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    position: "absolute",
+    top: 60,
+    right: 24,
+    zIndex: 10,
   },
   settingsButton: {
     padding: 8,
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-  },
-  title: {
-    fontSize: 40,
-    fontWeight: "800",
-    letterSpacing: -1,
-  },
-  subtitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  description: {
-    fontSize: 14,
-    opacity: 0.6,
-    marginBottom: 16,
-  },
-  processingSection: {
-    padding: 20,
+    backgroundColor: "rgba(0,0,0,0.3)",
     borderRadius: 20,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: "#1f7a8c",
-    marginBottom: 32,
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    marginBottom: 16,
+  deckContainer: {
+    flex: 1,
+  },
+  cardContainer: {
+    ...StyleSheet.absoluteFillObject,
   },
   card: {
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 16,
+    flex: 1,
     overflow: "hidden",
-    padding: 12,
   },
-  imagePlaceholder: {
-    height: 200,
-    borderRadius: 8,
+  cardImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  cardFooter: {
+    position: "absolute",
+    bottom: 40,
+    left: 24,
+    right: 24,
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  cardTitle: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "white",
+    marginBottom: 4,
+  },
+  cardDesc: {
+    fontSize: 16,
+    color: "rgba(255,255,255,0.8)",
+    marginBottom: 16,
+  },
+  tagContainer: {
+    flexDirection: "row",
+  },
+  tag: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  tagText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  likeBadge: {
+    position: "absolute",
+    top: 100,
+    left: 40,
+    borderWidth: 4,
+    borderColor: "#2ECC40",
+    paddingHorizontal: 15,
+    borderRadius: 10,
+    transform: [{ rotate: "-15deg" }],
+    zIndex: 20,
+  },
+  nopeBadge: {
+    position: "absolute",
+    top: 100,
+    right: 40,
+    borderWidth: 4,
+    borderColor: "#FF4136",
+    paddingHorizontal: 15,
+    borderRadius: 10,
+    transform: [{ rotate: "15deg" }],
+    zIndex: 20,
+  },
+  badgeText: {
+    fontSize: 40,
+    fontWeight: "900",
+    color: "#2ECC40",
+  },
+  emptyContainer: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  cardImage: {
-    width: "100%",
-    height: "100%",
-  },
-  placeholderText: {
-    opacity: 0.3,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 12,
-  },
   emptyText: {
-    textAlign: "center",
-    marginTop: 40,
+    fontSize: 18,
     opacity: 0.5,
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  refreshButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 25,
   },
 });
