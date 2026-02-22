@@ -540,25 +540,15 @@ class OutfitResponse(BaseModel):
 # Step 4 — Outfit Recommendations (Nemotron-Nano-9B-v2)
 # ──────────────────────────────────────────────────────────────────────────────
 
-RECOMMENDATION_SYSTEM_PROMPT = """You are an expert fashion stylist. The user will give you their complete wardrobe as a list of clothing items, each with an ID, category, color, style, and material.
+RECOMMENDATION_SYSTEM_PROMPT = """You are an expert fashion stylist. The user will provide their complete wardrobe as a JSON list. Each item has: id, category, color, style, and material.
 
-Your job is to suggest 3 outfit combinations from these items. Each outfit should:
+Suggest 3 outfit combinations from these items. Each outfit must:
 - Be a complete look (top + bottom, or a dress, plus shoes if available)
 - Have good color coordination and style cohesion
 - Be suitable for the occasion/season if specified
 
-Respond ONLY with valid JSON in this exact format, no other text:
-{
-  "recommendations": [
-    {
-      "outfit_items": ["item-id-1", "item-id-2", "item-id-3"],
-      "occasion": "casual day out",
-      "description": "A brief explanation of why these items work together",
-      "style_tags": ["minimalist", "monochrome"]
-    }
-  ]
-}
-/no_think"""
+You must respond ONLY with valid JSON in this exact format:
+{"recommendations": [{"outfit_items": ["id1", "id2"], "occasion": "casual", "description": "Why these work together", "style_tags": ["tag1"]}]}"""
 
 
 def generate_recommendations(
@@ -577,8 +567,10 @@ def generate_recommendations(
         user_msg += f"\n\nSuggest outfits for: {occasion}"
     if season:
         user_msg += f"\nSeason: {season}"
+    user_msg += "\n\nRespond with JSON only."
 
     messages = [
+        {"role": "system", "content": "/no_think"},
         {"role": "system", "content": RECOMMENDATION_SYSTEM_PROMPT},
         {"role": "user", "content": user_msg},
     ]
@@ -605,6 +597,7 @@ def generate_recommendations(
             temperature=0.6,
             top_p=0.95,
             do_sample=True,
+            repetition_penalty=1.2,
             eos_token_id=nemotron_tokenizer.eos_token_id,
         )
 
