@@ -365,20 +365,3 @@ The app expects these environment variables (via `.env` or Expo config):
 4. **Secure session storage**: `expo-secure-store` is used instead of AsyncStorage for auth tokens.
 5. **File-based routing**: Expo Router maps the filesystem to navigation structure, with route groups `(auth)` and `(tabs)`.
 6. **Path alias**: `@/*` maps to the project root (configured in `tsconfig.json`).
-
----
-
-## 15. Known Gaps / TODOs
-
-- [ ] **`.env` is empty** — Supabase credentials need to be configured.
-- [ ] **Liked Outfits screen** — Currently a placeholder with no functionality.
-- [ ] **Profile tab** — Hidden and non-functional; profile editing is via Settings → Profile Info.
-- [ ] **AI Processing** — `processOutfitImage()` is a mock (`setTimeout`). Needs real Supabase Edge Function.
-- [ ] **Virtual Draping** — Full-length photo is collected but no draping/overlay feature is implemented.
-- [ ] **Forgot Password** — Button exists on login but has no handler.
-- [ ] **Security & Notifications settings** — Stubs with no functionality.
-- [ ] **Appearance settings** — Stub; theme is auto-detected only.
-- [ ] **Outfit creation** — No screen to compose/create outfits from wardrobe items.
-- [ ] **Item categorization** — `category` and `tags` fields exist in the schema but aren't used in the UI.
-- [ ] **Delete wardrobe items** — No UI for removing items from the wardrobe.
-- [ ] **Error handling** — Minimal; most errors are `console.error` or simple alerts.
