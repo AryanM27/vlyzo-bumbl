@@ -77,9 +77,37 @@ Our ML pipeline runs asynchronously behind Supabase Edge Functions:
 
 ---
 
-## 📚 Documentation
+## ☁️ Brev AI Deployment Setup
 
-For a deep dive into Vlyzo's AI architecture, pipeline breakdown, and Brev deployment strategy, please see the [AI Implementation Guide](./AI_IMPLEMENTATION_README.md).
+To run the custom AI services (Vision Pipeline and Nemotron LLM), you will need to start the deployment on an NVIDIA Brev VM (L40S or better recommended).
+
+### 1. Automatic Setup
+SSH into your Brev instance, navigate to the `brev/` directory, and run the deployment script. This will set up the Python virtual environment, install all dependencies, and pre-download the heavy vision models (`SegFormer`, `FashionCLIP`, `rembg`):
+
+```bash
+cd brev/
+bash deploy.sh
+```
+
+### 2. Start the AI Services
+After setup is complete, you can automatically spin up both the vLLM server (Nemotron-Nano-9B-v2) and the Vision Pipeline (FastAPI) inside a `tmux` session by running the start script:
+
+```bash
+bash start.sh
+```
+
+This will:
+- Launch vLLM on port `8001`
+- Wait for the LLM to load into memory
+- Launch the Vision Pipeline on port `8000`
+
+You can attach to the session at any time with `tmux attach -t vlyzo`. 
+
+Once both are running, update your `.env` variables with the mapped endpoints to start routing traffic from the mobile app.
+
+---
+
+## 📚 Documentation
 
 For detailed app context, schemas, and project structure, refer to the [Project Context](./context.md).
 
