@@ -1,50 +1,94 @@
-# Welcome to your Expo app 👋
+# Vlyzo 🐝 
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+> **Your AI-Powered Digital Wardrobe & Personal Stylist**
 
-## Get started
+Vlyzo is a modern, AI-driven fashion and wardrobe management mobile application built with **React Native (Expo)** and **Supabase**. It empowers users to digitize their closets, discover community-curated outfit inspirations, and leverage advanced AI vision models to generate new style pairings and see virtual try-ons.
 
-1. Install dependencies
+---
 
+## 🌟 Key Features
+
+- **👗 Digital Wardrobe**: Upload photos of your clothing items and let Vlyzo automatically categorize, analyze, and store them securely.
+- **🤖 AI Style Analysis**: Powered by a robust vision pipeline (using `rembg`, `CLIPSeg`, and `FashionCLIP`), the app processes your wardrobe to automatically detect categories, colors, patterns, and materials.
+- **✨ Nemotron Outfit Recommendations**: Vlyzo uses NVIDIA's `Nemotron-Nano-9B-v2` to reason over your entire digital wardrobe and suggest smart, personalized outfit combinations based on your existing items.
+- **👕 Virtual Try-On**: Try items on virtually! Upload a full-length body photo, and Vlyzo integrates with the `IDM-VTON` model to generate seamless draped visuals of new outfits.
+- **🔥 Trending Feed**: Browse the public "Trending Now" feed to see public outfits shared by the community. Like styles and build your curated collection.
+
+---
+
+## 🏗️ Architecture & Tech Stack
+
+Vlyzo is built with a modern, scalable stack designed for AI integration:
+
+### Frontend (Mobile App)
+- **Framework**: React Native with Expo (SDK 54, New Architecture enabled)
+- **Language**: TypeScript (Strict Mode)
+- **Routing**: Expo Router (File-based navigation)
+- **UI & Animations**: `react-native-reanimated`, `react-native-gesture-handler`, and custom themed components for Light/Dark mode.
+
+### Backend & Infrastructure
+- **BaaS**: Supabase (Postgres Database, Auth, Storage, and Edge Functions)
+- **Database**: Supabase Postgres with strict Row Level Security (RLS) policies.
+- **AI Infrastructure**: NVIDIA Brev (GPU VM & NIM Deployments) powering our vision and LLM endpoints.
+
+### AI Vision Pipeline
+Our ML pipeline runs asynchronously behind Supabase Edge Functions:
+1. **Background Removal**: `rembg` (U2-Net) cleans up user uploads.
+2. **Segmentation**: `CLIPSeg` isolates individual garments within an outfit photo.
+3. **Classification**: `FashionCLIP` zero-shot classifies style, color, pattern, and generates 512-dim embeddings.
+4. **Reasoning & Styling**: `Nemotron-Nano-9B-v2` suggests outfit pairings.
+5. **Virtual Try-On**: `IDM-VTON` visualizes the selected garments on the user's uploaded body photo.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js & npm installed
+- An Expo account / Expo Go app on your physical device (or iOS Simulator / Android Emulator)
+- A Supabase Project (with credentials)
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/Vlyzo-bumbl.git
+   cd Vlyzo-bumbl-master
+   ```
+
+2. **Install dependencies:**
    ```bash
    npm install
    ```
 
-2. Start the app
+3. **Set up environment variables:**
+   Create a `.env` file in the root directory and add your Supabase credentials:
+   ```env
+   EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
+   EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
 
+4. **Run the app:**
    ```bash
    npx expo start
    ```
+   Press `i` to open in the iOS simulator, `a` for Android, or scan the QR code with your Expo Go app.
 
-In the output, you'll find options to open the app in a
+---
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 📚 Documentation
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+For a deep dive into Vlyzo's AI architecture, pipeline breakdown, and Brev deployment strategy, please see the [AI Implementation Guide](./AI_IMPLEMENTATION_README.md).
 
-## Get a fresh project
+For detailed app context, schemas, and project structure, refer to the [Project Context](./context.md).
 
-When you're ready, run:
+---
 
-```bash
-npm run reset-project
-```
+## 🤝 Contributing
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Learn more
+## 📄 License
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+This project is licensed under the MIT License - see the LICENSE file for details.
