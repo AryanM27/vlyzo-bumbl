@@ -139,14 +139,6 @@ export default function HomeScreen() {
           <ThemedText style={styles.emptyText}>
             You've seen everything!
           </ThemedText>
-          <TouchableOpacity
-            style={[styles.refreshButton, { backgroundColor: theme.tint }]}
-            onPress={loadOutfits}
-          >
-            <ThemedText style={{ color: "white", fontWeight: "bold" }}>
-              Refresh Feed
-            </ThemedText>
-          </TouchableOpacity>
         </View>
       );
     }
@@ -159,7 +151,18 @@ export default function HomeScreen() {
           <View
             style={[
               styles.card,
-              { backgroundColor: theme.secondary, borderColor: theme.border },
+              {
+                backgroundColor: theme.background,
+                borderColor: theme.border,
+                borderWidth: 3,
+                borderRadius: 24,
+                overflow: "hidden",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.1,
+                shadowRadius: 12,
+                elevation: 5,
+              },
             ]}
           >
             <Image
@@ -180,7 +183,7 @@ export default function HomeScreen() {
               </ThemedText>
             </Animated.View>
 
-            <View style={styles.cardFooter}>
+            {/* <View style={styles.cardFooter}>
               <ThemedText style={styles.cardTitle}>
                 {currentOutfit.title}
               </ThemedText>
@@ -196,7 +199,7 @@ export default function HomeScreen() {
                   </ThemedText>
                 </View>
               </View>
-            </View>
+            </View> */}
           </View>
         </Animated.View>
       </GestureDetector>
@@ -245,12 +248,15 @@ const styles = StyleSheet.create({
   },
   deckContainer: {
     flex: 1,
+    padding: 16,
+    paddingBottom: 16,
   },
   cardContainer: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
   },
   card: {
     flex: 1,
+    backgroundColor: "white",
     overflow: "hidden",
   },
   cardImage: {
@@ -268,7 +274,7 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: "rgba(0,0,0,0.4)",
     borderRadius: 24,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: "rgba(255,255,255,0.2)",
   },
   cardTitle: {
