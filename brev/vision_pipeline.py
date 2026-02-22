@@ -1,19 +1,23 @@
 """
-Vlyzo — Vision Pipeline Server
-================================
-rembg (background removal) → SegFormer (clothing segmentation) → FashionCLIP (classification)
+Vlyzo — Vision + LLM Pipeline Server
+=====================================
+Vision:  rembg (background removal) → SegFormer (clothing segmentation) → FashionCLIP (classification)
+LLM:     Nemotron-Nano-9B-v2 (outfit recommendations from full wardrobe)
 
 Run locally:   python vision_pipeline.py
 Run on Brev:   uvicorn vision_pipeline:app --host 0.0.0.0 --port 8000
+Skip LLM:      SKIP_LLM=1 python vision_pipeline.py   (for CPU-only testing)
 
 Endpoints:
-  GET  /health           → server + GPU status
-  POST /process-outfit   → full outfit photo → segmented + classified items
-  POST /process-single   → single item photo → classified item
+  GET  /health              → server + GPU status
+  POST /process-outfit      → full outfit photo → segmented + classified items
+  POST /process-single      → single item photo → classified item
+  POST /recommend-outfits   → full wardrobe → outfit recommendations from Nemotron
 """
 
 import os
 import io
+import json
 import base64
 import logging
 from typing import Optional
@@ -28,6 +32,8 @@ from transformers import (
     AutoModelForSemanticSegmentation,
     CLIPProcessor,
     CLIPModel,
+    AutoTokenizer,
+    AutoModelForCausalLM,
 )
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +46,7 @@ from pydantic import BaseModel
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PORT = int(os.getenv("PORT", "8000"))
 API_KEY = os.getenv("VISION_API_KEY", "")
+SKIP_LLM = os.getenv("SKIP_LLM", "").strip() in ("1", "true", "yes")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -151,7 +158,7 @@ SEASONS = ["spring", "summer", "autumn", "winter", "all-season"]
 logger.info(f"Device: {DEVICE}")
 if DEVICE == "cuda":
     logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-    logger.info(f"VRAM: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")
+    logger.info(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
 logger.info("Loading SegFormer B2 (mattmdjaga/segformer_b2_clothes)...")
 segformer_processor = SegformerImageProcessor.from_pretrained(
@@ -168,6 +175,27 @@ fashionclip_model = CLIPModel.from_pretrained("patrickjohncyh/fashion-clip").to(
 fashionclip_model.eval()
 
 logger.info("rembg will lazy-load its U2-Net weights on first request.")
+
+# ── Nemotron-Nano-9B-v2 (LLM for outfit recommendations) ──
+nemotron_tokenizer = None
+nemotron_model = None
+
+if SKIP_LLM:
+    logger.info("SKIP_LLM=1 → Skipping Nemotron load (vision-only mode).")
+else:
+    logger.info("Loading Nemotron-Nano-9B-v2 (nvidia/NVIDIA-Nemotron-Nano-9B-v2)...")
+    nemotron_tokenizer = AutoTokenizer.from_pretrained(
+        "nvidia/NVIDIA-Nemotron-Nano-9B-v2"
+    )
+    nemotron_model = AutoModelForCausalLM.from_pretrained(
+        "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
+        torch_dtype=torch.bfloat16,
+        trust_remote_code=True,
+        device_map="auto",
+    )
+    nemotron_model.eval()
+    logger.info("Nemotron loaded.")
+
 logger.info("All models ready.")
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -508,10 +536,103 @@ class OutfitResponse(BaseModel):
     items: list[ItemOut]
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Step 4 — Outfit Recommendations (Nemotron-Nano-9B-v2)
+# ──────────────────────────────────────────────────────────────────────────────
+
+RECOMMENDATION_SYSTEM_PROMPT = """You are an expert fashion stylist. The user will give you their complete wardrobe as a list of clothing items, each with an ID, category, color, style, and material.
+
+Your job is to suggest 3 outfit combinations from these items. Each outfit should:
+- Be a complete look (top + bottom, or a dress, plus shoes if available)
+- Have good color coordination and style cohesion
+- Be suitable for the occasion/season if specified
+
+Respond ONLY with valid JSON in this exact format, no other text:
+{
+  "recommendations": [
+    {
+      "outfit_items": ["item-id-1", "item-id-2", "item-id-3"],
+      "occasion": "casual day out",
+      "description": "A brief explanation of why these items work together",
+      "style_tags": ["minimalist", "monochrome"]
+    }
+  ]
+}
+/no_think"""
+
+
+def generate_recommendations(
+    wardrobe: list[dict],
+    occasion: Optional[str] = None,
+    season: Optional[str] = None,
+) -> dict:
+    """Use Nemotron to generate outfit recommendations from the full wardrobe."""
+    if nemotron_model is None or nemotron_tokenizer is None:
+        raise RuntimeError("Nemotron not loaded. Set SKIP_LLM=0 or run on GPU.")
+
+    # Build the user message with the full wardrobe
+    wardrobe_text = json.dumps(wardrobe, indent=2)
+    user_msg = f"Here is my complete wardrobe:\n{wardrobe_text}"
+    if occasion:
+        user_msg += f"\n\nSuggest outfits for: {occasion}"
+    if season:
+        user_msg += f"\nSeason: {season}"
+
+    messages = [
+        {"role": "system", "content": RECOMMENDATION_SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+    ]
+
+    logger.info(f"  [Nemotron] Generating recommendations for {len(wardrobe)} items...")
+
+    tokenized = nemotron_tokenizer.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_tensors="pt",
+    ).to(nemotron_model.device)
+
+    with torch.no_grad():
+        outputs = nemotron_model.generate(
+            tokenized,
+            max_new_tokens=1024,
+            temperature=0.6,
+            top_p=0.95,
+            do_sample=True,
+            eos_token_id=nemotron_tokenizer.eos_token_id,
+        )
+
+    # Decode only the new tokens (skip the input)
+    new_tokens = outputs[0][tokenized.shape[1]:]
+    response_text = nemotron_tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+
+    logger.info(f"  [Nemotron] Raw response: {response_text[:200]}...")
+
+    # Parse JSON from the response
+    try:
+        # Try to extract JSON from the response
+        json_start = response_text.find("{")
+        json_end = response_text.rfind("}") + 1
+        if json_start >= 0 and json_end > json_start:
+            result = json.loads(response_text[json_start:json_end])
+        else:
+            result = {"recommendations": [], "raw_response": response_text}
+    except json.JSONDecodeError:
+        logger.warning("  [Nemotron] Failed to parse JSON, returning raw response.")
+        result = {"recommendations": [], "raw_response": response_text}
+
+    logger.info(f"  [Nemotron] Generated {len(result.get('recommendations', []))} recommendations.")
+    return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FastAPI
+# ──────────────────────────────────────────────────────────────────────────────
+
 app = FastAPI(
-    title="Vlyzo Vision Pipeline",
-    description="rembg → SegFormer → FashionCLIP",
-    version="2.0.0",
+    title="Vlyzo Vision + LLM Pipeline",
+    description="rembg → SegFormer → FashionCLIP + Nemotron-Nano-9B",
+    version="3.0.0",
 )
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
@@ -520,15 +641,19 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
+    models = [
+        "rembg/u2net",
+        "mattmdjaga/segformer_b2_clothes",
+        "patrickjohncyh/fashion-clip",
+    ]
+    if nemotron_model is not None:
+        models.append("nvidia/NVIDIA-Nemotron-Nano-9B-v2")
     return {
         "status": "ok",
         "device": DEVICE,
         "gpu": torch.cuda.get_device_name(0) if DEVICE == "cuda" else None,
-        "models": [
-            "rembg/u2net",
-            "mattmdjaga/segformer_b2_clothes",
-            "patrickjohncyh/fashion-clip",
-        ],
+        "llm_loaded": nemotron_model is not None,
+        "models": models,
     }
 
 
@@ -547,6 +672,38 @@ async def api_single(req: OutfitRequest):
     try:
         img = decode_base64_image(req.image_base64)
         return process_single(img)
+    except Exception as e:
+        logger.error(f"Error: {e}", exc_info=True)
+        raise HTTPException(500, detail=str(e))
+
+
+class WardrobeItem(BaseModel):
+    id: str
+    category: str
+    color: str
+    style: str = ""
+    material: str = ""
+    season: str = ""
+
+
+class RecommendRequest(BaseModel):
+    wardrobe: list[WardrobeItem]
+    occasion: Optional[str] = None
+    season: Optional[str] = None
+
+
+@app.post("/recommend-outfits")
+async def api_recommend(req: RecommendRequest):
+    try:
+        wardrobe_dicts = [item.model_dump() for item in req.wardrobe]
+        result = generate_recommendations(
+            wardrobe=wardrobe_dicts,
+            occasion=req.occasion,
+            season=req.season,
+        )
+        return result
+    except RuntimeError as e:
+        raise HTTPException(503, detail=str(e))
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         raise HTTPException(500, detail=str(e))
