@@ -176,25 +176,17 @@ fashionclip_model.eval()
 
 logger.info("rembg will lazy-load its U2-Net weights on first request.")
 
-# ── Nemotron-Nano-9B-v2 (LLM for outfit recommendations) ──
-nemotron_tokenizer = None
-nemotron_model = None
+# ── Nemotron-Nano-9B-v2 (served by vLLM on port 8001) ──
+# vLLM properly handles the Mamba-2 hybrid cache that transformers doesn't support.
+# Start vLLM separately: vllm serve nvidia/NVIDIA-Nemotron-Nano-9B-v2 --port 8001 --trust-remote-code
+VLLM_URL = os.getenv("VLLM_URL", "http://localhost:8001")
+LLM_AVAILABLE = not SKIP_LLM
 
 if SKIP_LLM:
-    logger.info("SKIP_LLM=1 → Skipping Nemotron load (vision-only mode).")
+    logger.info("SKIP_LLM=1 → Nemotron disabled (vision-only mode).")
 else:
-    logger.info("Loading Nemotron-Nano-9B-v2 (nvidia/NVIDIA-Nemotron-Nano-9B-v2)...")
-    nemotron_tokenizer = AutoTokenizer.from_pretrained(
-        "nvidia/NVIDIA-Nemotron-Nano-9B-v2"
-    )
-    nemotron_model = AutoModelForCausalLM.from_pretrained(
-        "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True,
-        device_map="auto",
-    )
-    nemotron_model.eval()
-    logger.info("Nemotron loaded.")
+    logger.info(f"Nemotron will be called via vLLM at {VLLM_URL}")
+    logger.info("Make sure vLLM is running: vllm serve nvidia/NVIDIA-Nemotron-Nano-9B-v2 --port 8001 --trust-remote-code")
 
 logger.info("All models ready.")
 
@@ -540,8 +532,7 @@ class OutfitResponse(BaseModel):
 # Step 4 — Outfit Recommendations (Nemotron-Nano-9B-v2)
 # ──────────────────────────────────────────────────────────────────────────────
 
-RECOMMENDATION_SYSTEM_PROMPT = """/no_think
-You are an expert fashion stylist. Given a user's wardrobe items as JSON, suggest 3 outfit combinations.
+RECOMMENDATION_SYSTEM_PROMPT = """You are an expert fashion stylist. Given a user's wardrobe items as JSON, suggest 3 outfit combinations.
 
 Rules:
 - Each outfit needs a top + bottom (or dress) + shoes if available
@@ -557,9 +548,11 @@ def generate_recommendations(
     occasion: Optional[str] = None,
     season: Optional[str] = None,
 ) -> dict:
-    """Use Nemotron to generate outfit recommendations from the full wardrobe."""
-    if nemotron_model is None or nemotron_tokenizer is None:
-        raise RuntimeError("Nemotron not loaded. Set SKIP_LLM=0 or run on GPU.")
+    """Call Nemotron via vLLM's OpenAI-compatible API for outfit recommendations."""
+    if not LLM_AVAILABLE:
+        raise RuntimeError("LLM disabled. Set SKIP_LLM=0 and start vLLM.")
+
+    import requests as req_lib
 
     # Build the user message with the full wardrobe
     wardrobe_text = json.dumps(wardrobe)
@@ -569,44 +562,35 @@ def generate_recommendations(
     if season:
         user_msg += f"\nSeason: {season}"
 
-    messages = [
-        {"role": "system", "content": RECOMMENDATION_SYSTEM_PROMPT},
-        {"role": "user", "content": user_msg},
-    ]
+    logger.info(f"  [Nemotron] Generating recommendations for {len(wardrobe)} items via vLLM...")
 
-    logger.info(f"  [Nemotron] Generating recommendations for {len(wardrobe)} items...")
-
-    input_ids = nemotron_tokenizer.apply_chat_template(
-        messages,
-        tokenize=True,
-        add_generation_prompt=True,
-        return_tensors="pt",
+    # Call vLLM's OpenAI-compatible chat endpoint
+    response = req_lib.post(
+        f"{VLLM_URL}/v1/chat/completions",
+        json={
+            "model": "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
+            "messages": [
+                {"role": "system", "content": "/no_think\n" + RECOMMENDATION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            "max_tokens": 1024,
+            "temperature": 0,
+        },
+        timeout=120,
     )
 
-    # apply_chat_template may return a BatchEncoding or a plain tensor
-    if hasattr(input_ids, "input_ids"):
-        input_ids = input_ids.input_ids
+    if response.status_code != 200:
+        error_text = response.text
+        logger.error(f"  [Nemotron] vLLM error ({response.status_code}): {error_text}")
+        raise RuntimeError(f"vLLM error: {error_text}")
 
-    input_ids = input_ids.to(nemotron_model.device)
+    data = response.json()
+    response_text = data["choices"][0]["message"]["content"].strip()
 
-    # /no_think mode → use greedy decoding (NVIDIA recommended)
-    with torch.no_grad():
-        outputs = nemotron_model.generate(
-            input_ids,
-            max_new_tokens=1024,
-            do_sample=False,
-            eos_token_id=nemotron_tokenizer.eos_token_id,
-        )
-
-    # Decode only the new tokens (skip the input)
-    new_tokens = outputs[0][input_ids.shape[1]:]
-    response_text = nemotron_tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-
-    logger.info(f"  [Nemotron] Raw response: {response_text[:200]}...")
+    logger.info(f"  [Nemotron] Raw response: {response_text[:300]}...")
 
     # Parse JSON from the response
     try:
-        # Try to extract JSON from the response
         json_start = response_text.find("{")
         json_end = response_text.rfind("}") + 1
         if json_start >= 0 and json_end > json_start:
@@ -642,13 +626,14 @@ async def health():
         "mattmdjaga/segformer_b2_clothes",
         "patrickjohncyh/fashion-clip",
     ]
-    if nemotron_model is not None:
-        models.append("nvidia/NVIDIA-Nemotron-Nano-9B-v2")
+    if LLM_AVAILABLE:
+        models.append("nvidia/NVIDIA-Nemotron-Nano-9B-v2 (via vLLM)")
     return {
         "status": "ok",
         "device": DEVICE,
         "gpu": torch.cuda.get_device_name(0) if DEVICE == "cuda" else None,
-        "llm_loaded": nemotron_model is not None,
+        "llm_available": LLM_AVAILABLE,
+        "vllm_url": VLLM_URL if LLM_AVAILABLE else None,
         "models": models,
     }
 

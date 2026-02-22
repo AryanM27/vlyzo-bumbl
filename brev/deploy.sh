@@ -11,19 +11,17 @@ python3 -m venv venv
 source venv/bin/activate
 
 # 2. Install Dependencies
-echo "⏳ Installing dependencies (this may take a minute)..."
+echo "⏳ Installing dependencies..."
 pip install -r requirements.txt
 
-# 3. Pre-download Model Weights
-# (Avoids slow cold-starts or timeouts on the first API request)
-echo "🧠 Pre-downloading model weights..."
+# 3. Pre-download Vision Model Weights
+echo "🧠 Pre-downloading vision model weights..."
 python -c "
 import os
 import torch
 from transformers import (
     SegformerImageProcessor, AutoModelForSemanticSegmentation,
     CLIPProcessor, CLIPModel,
-    AutoTokenizer, AutoModelForCausalLM,
 )
 from rembg import new_session
 
@@ -39,25 +37,27 @@ print('  • Loading rembg (U2-Net)...')
 os.environ['U2NET_HOME'] = os.path.expanduser('~/.u2net')
 new_session('u2net')
 
-print('  • Loading Nemotron-Nano-9B-v2 (~18GB, this may take a few minutes)...')
-AutoTokenizer.from_pretrained('nvidia/NVIDIA-Nemotron-Nano-9B-v2')
-AutoModelForCausalLM.from_pretrained(
-    'nvidia/NVIDIA-Nemotron-Nano-9B-v2',
-    torch_dtype=torch.bfloat16,
-    trust_remote_code=True,
-)
-
-print('  ✅ All models cached successfully.')
+print('  ✅ Vision models cached.')
 "
 
 echo ""
-echo "✅ Setup complete! You are ready to start the server."
+echo "✅ Setup complete!"
 echo ""
-echo "To run the full server (vision + LLM):"
+echo "=== HOW TO RUN ==="
+echo ""
+echo "You need TWO processes (use tmux with two panes):"
+echo ""
+echo "  Pane 1 — vLLM (Nemotron LLM server on port 8001):"
+echo "    source venv/bin/activate"
+echo "    vllm serve nvidia/NVIDIA-Nemotron-Nano-9B-v2 --port 8001 --trust-remote-code --dtype bfloat16"
+echo ""
+echo "  Pane 2 — Vision Pipeline (FastAPI on port 8000):"
+echo "    source venv/bin/activate"
+echo "    python vision_pipeline.py"
+echo ""
+echo "=== QUICK START (copy-paste) ==="
+echo ""
+echo "  tmux new -s vlyzo"
+echo "  source venv/bin/activate && vllm serve nvidia/NVIDIA-Nemotron-Nano-9B-v2 --port 8001 --trust-remote-code --dtype bfloat16"
+echo "  # (Ctrl+B, %) to split pane, then:"
 echo "  source venv/bin/activate && python vision_pipeline.py"
-echo ""
-echo "To run vision-only (skip Nemotron, for testing):"
-echo "  source venv/bin/activate && SKIP_LLM=1 python vision_pipeline.py"
-echo ""
-echo "Using PM2 (recommended for production):"
-echo "  pm2 start 'source venv/bin/activate && uvicorn vision_pipeline:app --host 0.0.0.0 --port 8000' --name vlyzo"

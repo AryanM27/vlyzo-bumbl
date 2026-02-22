@@ -12,5 +12,5 @@ scipy>=1.10.0
 python-multipart
 accelerate>=0.25.0
 sentencepiece
-mamba-ssm
-causal-conv1d
+requests
+vllm
