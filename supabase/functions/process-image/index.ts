@@ -153,7 +153,7 @@ Deno.serve(async (req: Request) => {
     try {
       // 4. Send image to Brev Vision Pipeline
       const endpoint =
-        mode === "single" ? "/process-single" : "/process-outfit";
+        mode === "outfit" ? "/process-outfit" : "/process-outfit";
       console.log(`Sending to Brev: ${BREV_VISION_URL}${endpoint}`);
 
       const visionRes = await fetch(`${BREV_VISION_URL}${endpoint}`, {
@@ -179,7 +179,7 @@ Deno.serve(async (req: Request) => {
         const itemId = crypto.randomUUID();
 
         // 5a. Upload cropped image to Supabase Storage
-        const storagePath = `items/${userId}/${itemId}.png`;
+        const storagePath = `${userId}/items/${itemId}.png`;
         const imageBytes = base64ToUint8Array(item.cropped_image_base64);
 
         const { error: uploadError } = await supabase.storage
