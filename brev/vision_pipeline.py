@@ -585,16 +585,22 @@ def generate_recommendations(
 
     logger.info(f"  [Nemotron] Generating recommendations for {len(wardrobe)} items...")
 
-    tokenized = nemotron_tokenizer.apply_chat_template(
+    input_ids = nemotron_tokenizer.apply_chat_template(
         messages,
         tokenize=True,
         add_generation_prompt=True,
         return_tensors="pt",
-    ).to(nemotron_model.device)
+    )
+
+    # apply_chat_template may return a BatchEncoding or a plain tensor
+    if hasattr(input_ids, "input_ids"):
+        input_ids = input_ids.input_ids
+
+    input_ids = input_ids.to(nemotron_model.device)
 
     with torch.no_grad():
         outputs = nemotron_model.generate(
-            tokenized,
+            input_ids,
             max_new_tokens=1024,
             temperature=0.6,
             top_p=0.95,
@@ -603,7 +609,7 @@ def generate_recommendations(
         )
 
     # Decode only the new tokens (skip the input)
-    new_tokens = outputs[0][tokenized.shape[1]:]
+    new_tokens = outputs[0][input_ids.shape[1]:]
     response_text = nemotron_tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
     logger.info(f"  [Nemotron] Raw response: {response_text[:200]}...")
