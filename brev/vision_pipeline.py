@@ -540,15 +540,16 @@ class OutfitResponse(BaseModel):
 # Step 4 — Outfit Recommendations (Nemotron-Nano-9B-v2)
 # ──────────────────────────────────────────────────────────────────────────────
 
-RECOMMENDATION_SYSTEM_PROMPT = """You are an expert fashion stylist. The user will provide their complete wardrobe as a JSON list. Each item has: id, category, color, style, and material.
+RECOMMENDATION_SYSTEM_PROMPT = """/no_think
+You are an expert fashion stylist. Given a user's wardrobe items as JSON, suggest 3 outfit combinations.
 
-Suggest 3 outfit combinations from these items. Each outfit must:
-- Be a complete look (top + bottom, or a dress, plus shoes if available)
-- Have good color coordination and style cohesion
-- Be suitable for the occasion/season if specified
+Rules:
+- Each outfit needs a top + bottom (or dress) + shoes if available
+- Good color coordination and style cohesion
+- Return ONLY valid JSON, nothing else
 
-You must respond ONLY with valid JSON in this exact format:
-{"recommendations": [{"outfit_items": ["id1", "id2"], "occasion": "casual", "description": "Why these work together", "style_tags": ["tag1"]}]}"""
+Output format:
+{"recommendations": [{"outfit_items": ["id1", "id2", "id3"], "occasion": "casual day out", "description": "Why these work", "style_tags": ["minimalist"]}]}"""
 
 
 def generate_recommendations(
@@ -561,16 +562,14 @@ def generate_recommendations(
         raise RuntimeError("Nemotron not loaded. Set SKIP_LLM=0 or run on GPU.")
 
     # Build the user message with the full wardrobe
-    wardrobe_text = json.dumps(wardrobe, indent=2)
-    user_msg = f"Here is my complete wardrobe:\n{wardrobe_text}"
+    wardrobe_text = json.dumps(wardrobe)
+    user_msg = f"My wardrobe: {wardrobe_text}"
     if occasion:
-        user_msg += f"\n\nSuggest outfits for: {occasion}"
+        user_msg += f"\nOccasion: {occasion}"
     if season:
         user_msg += f"\nSeason: {season}"
-    user_msg += "\n\nRespond with JSON only."
 
     messages = [
-        {"role": "system", "content": "/no_think"},
         {"role": "system", "content": RECOMMENDATION_SYSTEM_PROMPT},
         {"role": "user", "content": user_msg},
     ]
@@ -590,14 +589,12 @@ def generate_recommendations(
 
     input_ids = input_ids.to(nemotron_model.device)
 
+    # /no_think mode → use greedy decoding (NVIDIA recommended)
     with torch.no_grad():
         outputs = nemotron_model.generate(
             input_ids,
             max_new_tokens=1024,
-            temperature=0.6,
-            top_p=0.95,
-            do_sample=True,
-            repetition_penalty=1.2,
+            do_sample=False,
             eos_token_id=nemotron_tokenizer.eos_token_id,
         )
 
