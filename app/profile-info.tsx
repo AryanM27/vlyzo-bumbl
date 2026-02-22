@@ -8,14 +8,14 @@ import * as ImagePicker from "expo-image-picker";
 import { Stack } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function ProfileInfoScreen() {
@@ -66,6 +66,7 @@ export default function ProfileInfoScreen() {
         Alert.alert("Success", "Full-length photo updated!");
       } catch (error) {
         Alert.alert("Error", "Failed to upload photo.");
+        console.error("Error uploading photo:", error);
       } finally {
         setIsSaving(false);
       }

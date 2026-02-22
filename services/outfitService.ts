@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { decode } from "base64-arraybuffer";
 
 export interface Outfit {
   id: string;
@@ -15,6 +16,7 @@ export interface WardrobeItem {
   user_id: string;
   name: string;
   image_url: string;
+  cropped_image_url?: string;
   category: string;
   ai_category?: string;
   ai_color?: string;
@@ -68,20 +70,31 @@ export const outfitService = {
 
     return await Promise.all(
       items.map(async (item) => {
-        if (!item.image_url) return item;
+        if (!item.image_url && !item.cropped_image_url) return item;
 
-        // If it's already a full URL (public URL), use it
-        if (item.image_url.startsWith("http")) {
+        let storagePath =
+          item.cropped_image_url || `${item.user_id}/items/${item.id}.png`;
+
+        // Handle images stored as full Supabase public URLs due to older implementation
+        if (storagePath.includes("/object/public/wardrobe/")) {
+          storagePath = storagePath.split("/object/public/wardrobe/")[1];
+        } else if (storagePath.includes("/public/wardrobe/")) {
+          storagePath = storagePath.split("/public/wardrobe/")[1];
+        }
+
+        // If it's still a full URL (external), use it
+        if (storagePath.startsWith("http")) {
           return {
             ...item,
+            image_url: storagePath,
             category: item.category || item.ai_category || "Top",
           };
         }
 
-        // Get public URL from storage
+        // Get public URL from storage for the bucket
         const { data: urlData } = supabase.storage
           .from("wardrobe")
-          .getPublicUrl(item.image_url);
+          .getPublicUrl(storagePath);
 
         return {
           ...item,
@@ -246,13 +259,23 @@ export const outfitService = {
 
     if (error && error.code !== "PGRST116") throw error;
 
-    return (
-      data || {
-        full_name: user.data.user.email?.split("@")[0] || "User",
-        avatar_url: null,
-        bio: "",
-      }
-    );
+    const profile = data || {
+      full_name: user.data.user.email?.split("@")[0] || "User",
+      avatar_url: null,
+      bio: "",
+    };
+
+    // Add cache buster to full_length_photo_url if it exists
+    if (profile.full_length_photo_url) {
+      const timestamp = new Date().getTime();
+      profile.full_length_photo_url = profile.full_length_photo_url.includes(
+        "?",
+      )
+        ? `${profile.full_length_photo_url}&t=${timestamp}`
+        : `${profile.full_length_photo_url}?t=${timestamp}`;
+    }
+
+    return profile;
   },
 
   /**
@@ -288,5 +311,61 @@ export const outfitService = {
 
     if (error) throw error;
     return data;
+  },
+
+  /**
+   * Upload user profile full-length photo
+   */
+  async uploadProfilePhoto(base64: string) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
+
+    // Convert base64 to ArrayBuffer
+    const arrayBuffer = decode(base64);
+
+    // Use User ID as a folder and profile_pic.png as the filename
+    const filePath = `${user.id}/profile_pic.png`;
+
+    // Try updating first (if user already has a photo)
+    let { error: uploadError } = await supabase.storage
+      .from("wardrobe")
+      .update(filePath, arrayBuffer, {
+        contentType: "image/png",
+        cacheControl: "3600",
+      });
+
+    // If file doesn't exist, try initial upload
+    if (uploadError && uploadError.message.includes("Object not found")) {
+      const { error: initialUploadError } = await supabase.storage
+        .from("wardrobe")
+        .upload(filePath, arrayBuffer, {
+          contentType: "image/png",
+        });
+      uploadError = initialUploadError;
+    }
+
+    if (uploadError) throw uploadError;
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from("wardrobe")
+      .getPublicUrl(filePath);
+
+    if (!urlData?.publicUrl) throw new Error("Failed to get public URL");
+
+    // Update profiles table using .update() instead of .upsert()
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({
+        full_length_photo_url: urlData.publicUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id);
+
+    if (updateError) throw updateError;
+
+    return urlData.publicUrl;
   },
 };

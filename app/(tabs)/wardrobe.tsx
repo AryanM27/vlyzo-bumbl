@@ -98,9 +98,16 @@ export default function WardrobeScreen() {
               ]}
             >
               <Image
-                source={{ uri: item.image_url }}
-                style={styles.cardImage}
+                source={{
+                  uri: item.image_url,
+                }}
+                style={{
+                  width: "100%",
+                  height: "70%",
+                  marginTop: 12,
+                }}
                 contentFit="contain"
+                transition={300}
               />
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>Extracted</Text>

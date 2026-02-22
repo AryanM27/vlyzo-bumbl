@@ -198,12 +198,9 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        // 5b. Get the public URL for the cropped image
-        const { data: urlData } = supabase.storage
-          .from("wardrobe")
-          .getPublicUrl(storagePath);
-
-        const croppedImageUrl = urlData?.publicUrl ?? storagePath;
+        // 5b. Save the storage path so the client can generate signed URLs
+        // (Wardrobe bucket is private by design)
+        const croppedImageUrl = storagePath;
 
         // 5c. Insert wardrobe item into database
         const itemRow = {

@@ -79,6 +79,9 @@ CREATE POLICY "Allow owners to read their own files" ON storage.objects
 CREATE POLICY "Allow owners to delete their own files" ON storage.objects
   FOR DELETE USING (bucket_id = 'wardrobe' AND auth.uid() = owner);
 
+CREATE POLICY "Allow owners to update their own files" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'wardrobe' AND auth.uid() = owner);
+
 -- PROFILES STORAGE SETUP
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('profiles', 'profiles', false);
 
