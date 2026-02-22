@@ -164,6 +164,13 @@ export const outfitService = {
     base64: string,
     mode: "single" | "outfit" = "single",
   ) {
+    // Force-refresh the session to ensure a valid JWT for the edge function
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshData.session) {
+      console.error("Session refresh failed:", refreshError?.message);
+      throw new Error("Session expired. Please sign out and sign back in.");
+    }
+
     const { data, error } = await supabase.functions.invoke("process-image", {
       body: {
         image_base64: base64,
