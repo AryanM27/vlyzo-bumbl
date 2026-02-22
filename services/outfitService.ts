@@ -38,9 +38,9 @@ export const outfitService = {
         .order("created_at", { ascending: false }),
       userId
         ? supabase
-          .from("liked_outfits")
-          .select("outfit_id")
-          .eq("user_id", userId)
+            .from("liked_outfits")
+            .select("outfit_id")
+            .eq("user_id", userId)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -164,10 +164,18 @@ export const outfitService = {
     base64: string,
     mode: "single" | "outfit" = "single",
   ) {
+    const { data: userAuth } = await supabase.auth.getUser();
+    const userId = userAuth.user?.id;
+
+    if (!userId) {
+      throw new Error("User not authenticated");
+    }
+
     const { data, error } = await supabase.functions.invoke("process-image", {
       body: {
         image_base64: base64,
         mode,
+        user_id: userId,
       },
     });
 
@@ -175,10 +183,10 @@ export const outfitService = {
       console.error("Edge Function Error:", error);
       // Try to read the response body from the error
       try {
-        if (error.context && typeof error.context.json === 'function') {
+        if (error.context && typeof error.context.json === "function") {
           const body = await error.context.json();
           console.error("Error response body:", JSON.stringify(body));
-        } else if (error.context && typeof error.context.text === 'function') {
+        } else if (error.context && typeof error.context.text === "function") {
           const body = await error.context.text();
           console.error("Error response text:", body);
         } else {
