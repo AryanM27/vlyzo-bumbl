@@ -6,13 +6,13 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Dimensions,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const { width } = Dimensions.get("window");
@@ -54,10 +54,9 @@ export default function WardrobeScreen() {
     if (!result.canceled && result.assets[0].base64) {
       try {
         setIsUploading(true);
-        const fileName = `${Date.now()}.jpg`;
         await outfitService.uploadWardrobeImage(
           result.assets[0].base64,
-          fileName,
+          "single",
         );
         await loadWardrobe();
       } catch (error) {

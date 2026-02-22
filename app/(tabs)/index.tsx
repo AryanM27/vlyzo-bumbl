@@ -64,7 +64,7 @@ export default function HomeScreen() {
     (direction: "left" | "right") => {
       const outfit = outfits[currentIndex];
       if (direction === "right") {
-        outfitService.toggleLikeOutfit(outfit);
+        outfitService.toggleLikeOutfit(outfit.id);
       }
 
       // Move to next card
