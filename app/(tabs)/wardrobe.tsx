@@ -108,6 +108,25 @@ export default function WardrobeScreen() {
                 }}
                 contentFit="contain"
                 transition={300}
+                onLoad={() =>
+                  console.log(
+                    "✅ WARDROBE IMG OK:",
+                    item.name,
+                    item.image_url?.substring(
+                      item.image_url.lastIndexOf("/") - 20,
+                    ),
+                  )
+                }
+                onError={(e: any) =>
+                  console.log(
+                    "❌ WARDROBE IMG FAIL:",
+                    item.name,
+                    "URL:",
+                    item.image_url,
+                    "Error:",
+                    e?.error,
+                  )
+                }
               />
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>Extracted</Text>

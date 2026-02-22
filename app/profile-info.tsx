@@ -131,6 +131,21 @@ export default function ProfileInfoScreen() {
               <Image
                 source={{ uri: profile.full_length_photo_url }}
                 style={styles.photo}
+                contentFit="cover"
+                onLoad={() =>
+                  console.log(
+                    "✅ SUPABASE IMAGE LOADED:",
+                    profile.full_length_photo_url,
+                  )
+                }
+                onError={(e: any) =>
+                  console.log(
+                    "❌ SUPABASE IMAGE FAILED:",
+                    e,
+                    "URL:",
+                    profile.full_length_photo_url,
+                  )
+                }
               />
             ) : (
               <View style={styles.photoPlaceholder}>
