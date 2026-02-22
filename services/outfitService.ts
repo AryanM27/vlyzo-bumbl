@@ -38,9 +38,9 @@ export const outfitService = {
         .order("created_at", { ascending: false }),
       userId
         ? supabase
-            .from("liked_outfits")
-            .select("outfit_id")
-            .eq("user_id", userId)
+          .from("liked_outfits")
+          .select("outfit_id")
+          .eq("user_id", userId)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -173,6 +173,20 @@ export const outfitService = {
 
     if (error) {
       console.error("Edge Function Error:", error);
+      // Try to read the response body from the error
+      try {
+        if (error.context && typeof error.context.json === 'function') {
+          const body = await error.context.json();
+          console.error("Error response body:", JSON.stringify(body));
+        } else if (error.context && typeof error.context.text === 'function') {
+          const body = await error.context.text();
+          console.error("Error response text:", body);
+        } else {
+          console.error("Error context:", JSON.stringify(error.context));
+        }
+      } catch (e) {
+        console.error("Could not read error body, context:", error.context);
+      }
       throw error;
     }
 

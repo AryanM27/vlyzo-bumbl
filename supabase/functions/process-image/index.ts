@@ -102,8 +102,14 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
+        // Debug: log env var status
+        console.log("SUPABASE_URL set:", !!SUPABASE_URL, "length:", SUPABASE_URL.length);
+        console.log("SUPABASE_SERVICE_ROLE_KEY set:", !!SUPABASE_SERVICE_ROLE_KEY, "length:", SUPABASE_SERVICE_ROLE_KEY.length);
+
         // 1. Authenticate the user
         const authHeader = req.headers.get("Authorization");
+        console.log("Authorization header present:", !!authHeader);
+
         if (!authHeader) {
             return jsonError("Missing Authorization header", 401);
         }
@@ -112,13 +118,16 @@ Deno.serve(async (req: Request) => {
 
         // Verify the JWT token
         const token = authHeader.replace("Bearer ", "");
+        console.log("Token length:", token.length);
         const {
             data: { user },
             error: authError,
         } = await supabase.auth.getUser(token);
 
+        console.log("Auth result - user:", !!user, "error:", authError?.message || "none");
+
         if (authError || !user) {
-            return jsonError("Unauthorized", 401);
+            return jsonError(`Unauthorized: ${authError?.message || "no user"}`, 401);
         }
 
         const userId = user.id;
